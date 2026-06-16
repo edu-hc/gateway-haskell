@@ -1,4 +1,4 @@
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
   id             UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
   sender_id      UUID          NOT NULL REFERENCES users(id),
   receiver_id    UUID          NOT NULL REFERENCES users(id),
@@ -15,6 +15,6 @@ CREATE TABLE transactions (
   updated_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_transactions_sender_id   ON transactions(sender_id);
-CREATE INDEX idx_transactions_receiver_id ON transactions(receiver_id);
-CREATE INDEX idx_transactions_status      ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_transactions_sender_id   ON transactions(sender_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_receiver_id ON transactions(receiver_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_status      ON transactions(status);
