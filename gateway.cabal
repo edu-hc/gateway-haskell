@@ -35,7 +35,7 @@ library
     , http-client           ^>=0.7
     , http-types            ^>=0.12
     , mtl                   ^>=2.3
-    , postgresql-simple     ^>=0.6
+    , postgresql-simple     ^>=0.7
     , resource-pool         ^>=0.4
     , scientific            ^>=0.3
     , servant               ^>=0.20
