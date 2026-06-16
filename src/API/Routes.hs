@@ -37,7 +37,10 @@ appToHandler env action = Handler . ExceptT . try $ runReaderT action env
 -- Servidor
 
 paymentServer :: ServerT PaymentAPI AppM
-paymentServer = userServer :<|> transactionServer
+paymentServer = healthHandler :<|> userServer :<|> transactionServer
+
+healthHandler :: AppM String
+healthHandler = return "OK"
 
 userServer :: ServerT UserAPI AppM
 userServer = createUserHandler

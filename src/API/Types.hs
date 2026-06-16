@@ -31,9 +31,14 @@ type TransactionAPI
   :<|> "transactions" :> Capture "id" UUID :> Get '[JSON] Transaction
 
 -- ---------------------------------------------------------------------------
+-- Health check
+
+type HealthAPI = "health" :> Get '[PlainText] String
+
+-- ---------------------------------------------------------------------------
 -- API completa
 
-type PaymentAPI = UserAPI :<|> TransactionAPI
+type PaymentAPI = HealthAPI :<|> UserAPI :<|> TransactionAPI
 
 userAPI :: Proxy PaymentAPI
 userAPI = Proxy
