@@ -2,7 +2,7 @@
 # ESTÁGIO 1: builder
 # Imagem oficial do Haskell já vem com GHC + Cabal
 # ─────────────────────────────────────────────
-FROM haskell:9.6-slim-bookworm AS builder
+FROM haskell:9.8.4-slim-bullseye AS builder
 
 WORKDIR /build
 
@@ -38,7 +38,7 @@ RUN cp $(cabal list-bin payment-gateway) /build/payment-gateway-exe
 # Usamos debian:slim (mesma base da imagem haskell) para garantir
 # compatibilidade de libc. Alpine usa musl e causaria problemas.
 # ─────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+FROM debian:bullseye-slim AS runtime
 
 WORKDIR /app
 
