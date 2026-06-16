@@ -1,6 +1,7 @@
 module Domain.User
   ( User (..)
   , CreateUserRequest (..)
+  , UpdateUserRequest (..)
   ) where
 
 import Data.Aeson    (FromJSON (parseJSON), ToJSON (toJSON, toEncoding),
@@ -49,3 +50,14 @@ instance ToJSON CreateUserRequest where
   toEncoding = genericToEncoding (jsonOpts "cur")
 instance FromJSON CreateUserRequest where
   parseJSON = genericParseJSON (jsonOpts "cur")
+
+data UpdateUserRequest = UpdateUserRequest
+  { uurName     :: Text
+  , uurDocument :: Text
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON UpdateUserRequest where
+  toJSON     = genericToJSON     (jsonOpts "uur")
+  toEncoding = genericToEncoding (jsonOpts "uur")
+instance FromJSON UpdateUserRequest where
+  parseJSON = genericParseJSON (jsonOpts "uur")

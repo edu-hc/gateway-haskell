@@ -17,28 +17,40 @@ import App.Env                     (AppEnv (..), AppM, dbPool)
 import Authorizer.Mock             (mockAuthorize)
 import DB.TransactionRepo          (findTransactionById, insertTransaction,
                                     updateTransactionStatus)
-import DB.UserRepo                 (findUserById, findUserByDocument,
-                                    insertUser)
+import DB.UserRepo                 (deleteUser, findUserById, findUserByDocument,
+                                    hasTransactions, insertUser, listUsers,
+                                    updateUser)
 import Domain.Transaction          (CreateTransactionRequest (..),
                                     Transaction (..), TransactionStatus (..))
-import Domain.User                 (CreateUserRequest (..), User (..))
+import Domain.User                 (CreateUserRequest (..), UpdateUserRequest (..),
+                                    User (..))
 import Vault.Repo                  (insertVaultEntry)
 import Vault.Tokenizer             (PAN (..), Token (..), tokenize)
 
+-- ---------------------------------------------------------------------------
+-- Conversão AppM → Handler
 
 appToHandler :: AppEnv -> AppM a -> Handler a
 appToHandler env action = Handler . ExceptT . try $ runReaderT action env
 
+-- ---------------------------------------------------------------------------
+-- Servidor
 
 paymentServer :: ServerT PaymentAPI AppM
 paymentServer = userServer :<|> transactionServer
 
 userServer :: ServerT UserAPI AppM
-userServer = createUserHandler :<|> getUserHandler
+userServer = createUserHandler
+          :<|> listUsersHandler
+          :<|> getUserHandler
+          :<|> updateUserHandler
+          :<|> deleteUserHandler
 
 transactionServer :: ServerT TransactionAPI AppM
 transactionServer = createTransactionHandler :<|> getTransactionHandler
 
+-- ---------------------------------------------------------------------------
+-- Handlers de usuário
 
 createUserHandler :: CreateUserRequest -> AppM User
 createUserHandler req = do
@@ -58,6 +70,11 @@ createUserHandler req = do
       liftIO $ insertUser pool uid (userName user) (userDocument user)
       return user
 
+listUsersHandler :: AppM [User]
+listUsersHandler = do
+  pool <- asks dbPool
+  liftIO $ listUsers pool
+
 getUserHandler :: UUID -> AppM User
 getUserHandler uid = do
   pool  <- asks dbPool
@@ -66,6 +83,40 @@ getUserHandler uid = do
     Just user -> return user
     Nothing   -> liftIO $ throwIO err404 { errBody = "User not found" }
 
+updateUserHandler :: UUID -> UpdateUserRequest -> AppM User
+updateUserHandler uid req = do
+  pool  <- asks dbPool
+  muser <- liftIO $ findUserById pool uid
+  case muser of
+    Nothing -> liftIO $ throwIO err404 { errBody = "User not found" }
+    Just _  -> do
+      mexisting <- liftIO $ findUserByDocument pool (uurDocument req)
+      case mexisting of
+        Just existing | userId existing /= uid ->
+          liftIO $ throwIO err409 { errBody = "Document already exists" }
+        _ -> do
+          liftIO $ updateUser pool uid (uurName req) (uurDocument req)
+          mupdated <- liftIO $ findUserById pool uid
+          case mupdated of
+            Just updated -> return updated
+            Nothing      -> liftIO $ throwIO err500 { errBody = "Unexpected error" }
+
+deleteUserHandler :: UUID -> AppM NoContent
+deleteUserHandler uid = do
+  pool  <- asks dbPool
+  muser <- liftIO $ findUserById pool uid
+  case muser of
+    Nothing -> liftIO $ throwIO err404 { errBody = "User not found" }
+    Just _  -> do
+      hasTx <- liftIO $ hasTransactions pool uid
+      if hasTx
+        then liftIO $ throwIO err409 { errBody = "User has transactions" }
+        else do
+          liftIO $ deleteUser pool uid
+          return NoContent
+
+-- ---------------------------------------------------------------------------
+-- Handlers de transação
 
 createTransactionHandler :: CreateTransactionRequest -> AppM Transaction
 createTransactionHandler req = do
@@ -116,6 +167,8 @@ getTransactionHandler tid = do
     Just tx -> return tx
     Nothing -> liftIO $ throwIO err404 { errBody = "Transaction not found" }
 
+-- ---------------------------------------------------------------------------
+-- Application WAI
 
 makeApplication :: AppEnv -> Application
 makeApplication env =
