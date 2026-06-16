@@ -1,0 +1,33 @@
+# render.yaml
+# Infraestrutura como código para o Render.
+# Commit este arquivo na raiz do repositório.
+# O Render detecta automaticamente e aplica as configurações.
+
+services:
+  # ── Web Service (seu gateway) ────────────────────────────────────────
+  - type: web
+    name: payment-gateway
+    runtime: docker          # usa o Dockerfile na raiz do repo
+    plan: free               # free tier: 512MB RAM, dorme após inatividade
+    healthCheckPath: /health # endpoint GET /health que retorna 200
+
+    # Variáveis de ambiente
+    # DATABASE_URL vem do banco provisionado abaixo (fromDatabase)
+    # Nunca coloque valores sensíveis aqui — use o dashboard do Render
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: payment-gateway-db
+          property: connectionString
+
+      # Se precisar de outras variáveis (ex: chave de criptografia do vault),
+      # adicione aqui como sync: false para preencher manualmente no dashboard:
+      # - key: VAULT_KEY
+      #   sync: false
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────
+databases:
+  - name: payment-gateway-db
+    plan: free               # free tier: 1GB storage, expira após 90 dias
+    databaseName: payment_gateway
+    user: pguser
