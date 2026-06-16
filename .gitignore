@@ -1,0 +1,31 @@
+# Cabal build artifacts
+dist-newstyle/
+.cabal-sandbox/
+cabal.sandbox.config
+*.hi
+*.o
+*.dyn_hi
+*.dyn_o
+
+# GHC
+.ghc.environment.*
+
+# Haskell Language Server
+.hls/
+hie.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets — nunca commitar
+.env
+*.env
+*.pem
+*.key
