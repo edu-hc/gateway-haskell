@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copiamos só os arquivos de definição de dependências primeiro.
 # Se o .cabal não mudar, o Docker reutiliza o cache desta camada,
 # evitando recompilar todas as libs em cada push de código.
-COPY payment-gateway.cabal ./
+COPY gateway.cabal ./
 RUN cabal update && cabal build --only-dependencies -j4
 
 # ── Build do projeto ───────────────────────────────────────────────────
@@ -27,11 +27,11 @@ RUN cabal update && cabal build --only-dependencies -j4
 COPY app/ ./app/
 COPY src/ ./src/
 
-RUN cabal build exe:payment-gateway -j4
+RUN cabal build exe:gateway -j4
 
 # Localiza o binário compilado e copia para um lugar fixo.
 # O path gerado pelo cabal inclui GHC version + hash, por isso usamos find.
-RUN cp $(cabal list-bin payment-gateway) /build/payment-gateway-exe
+RUN cp $(cabal list-bin gateway) /build/gateway-exe
 
 # ─────────────────────────────────────────────
 # ESTÁGIO 2: runtime mínimo
@@ -52,7 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copia o binário compilado do estágio builder
-COPY --from=builder /build/payment-gateway-exe ./payment-gateway
+COPY --from=builder /build/gateway-exe ./gateway
 
 # Copia as migrations para aplicar no entrypoint
 COPY migrations/ ./migrations/
