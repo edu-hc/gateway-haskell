@@ -10,12 +10,10 @@ import Data.Text                   (pack)
 import Data.Time                   (getCurrentTime)
 import Data.UUID                   (UUID)
 import Data.UUID.V4                (nextRandom)
-import Network.Wai.Middleware.Cors (cors, corsRequestHeaders,
-                                    corsMethods, corsOrigins,
-                                    simpleCorsResourcePolicy,
-                                    CorsResourcePolicy (..))
-import Network.HTTP.Types.Method   (methodDelete, methodGet, methodPost,
-                                    methodPut, methodOptions)
+import Network.Wai.Middleware.Cors (CorsResourcePolicy (..), cors,
+                                    simpleCorsResourcePolicy)
+import Network.HTTP.Types.Method   (methodDelete, methodGet, methodOptions,
+                                    methodPost, methodPut)
 import Servant
 
 import API.Types
@@ -25,28 +23,19 @@ import DB.TransactionRepo          (findTransactionById, insertTransaction,
                                     updateTransactionStatus)
 import DB.UserRepo                 (deleteUser, findUserById, findUserByDocument,
                                     hasTransactions, insertUser, listUsers,
-                                    updateUser)
-import Domain.Transaction          (CreateTransactionRequest (..),
-                                    Transaction (..), TransactionStatus (..))
-import Domain.User                 (CreateUserRequest (..), UpdateUserRequest (..),
-                                    User (..))
-import Vault.Repo                  (insertVaultEntry)
-import Vault.Tokenizer             (PAN (..), Token (..), tokenize)
-
--- ---------------------------------------------------------------------------
--- Conversão AppM → Handler
+                                    updateBalance, updateUser)
+import Domain.Transaction          (CreateTransactionRequest (..), Transaction (..),
+                                    TransactionStatus (..))
+import Domain.User                 (CreateUserRequest (..), UpdateUserRequest (..), User (..))
 
 appToHandler :: AppEnv -> AppM a -> Handler a
-appToHandler env action = Handler . ExceptT . try $ runReaderT action env
-
--- ---------------------------------------------------------------------------
--- Servidor
+appToHandler env action =
+  Handler . ExceptT . try $ runReaderT action env
 
 paymentServer :: ServerT PaymentAPI AppM
-paymentServer = healthHandler :<|> userServer :<|> transactionServer
-
-healthHandler :: AppM String
-healthHandler = return "OK"
+paymentServer = healthHandler
+             :<|> userServer
+             :<|> transactionServer
 
 userServer :: ServerT UserAPI AppM
 userServer = createUserHandler
@@ -58,8 +47,8 @@ userServer = createUserHandler
 transactionServer :: ServerT TransactionAPI AppM
 transactionServer = createTransactionHandler :<|> getTransactionHandler
 
--- ---------------------------------------------------------------------------
--- Handlers de usuário
+healthHandler :: AppM String
+healthHandler = return "OK"
 
 createUserHandler :: CreateUserRequest -> AppM User
 createUserHandler req = do
@@ -74,9 +63,12 @@ createUserHandler req = do
             { userId        = uid
             , userName      = curName req
             , userDocument  = curDocument req
+            , userBalance   = curBalance req
+            , userCurrency  = curCurrency req
             , userCreatedAt = now
             }
       liftIO $ insertUser pool uid (userName user) (userDocument user)
+                                   (userBalance user) (userCurrency user)
       return user
 
 listUsersHandler :: AppM [User]
@@ -124,30 +116,31 @@ deleteUserHandler uid = do
           liftIO $ deleteUser pool uid
           return NoContent
 
--- ---------------------------------------------------------------------------
--- Handlers de transação
-
 createTransactionHandler :: CreateTransactionRequest -> AppM Transaction
 createTransactionHandler req = do
-  pool  <- asks dbPool
-  muser <- liftIO $ findUserById pool (ctrUserId req)
-  case muser of
-    Nothing -> liftIO $ throwIO err404 { errBody = "User not found" }
-    Just _  -> do
-      token <- liftIO $ tokenize (PAN (ctrPan req))
-      let Token tok = token
-      liftIO $ insertVaultEntry pool token (ctrPan req) (ctrPanLastFour req) (ctrCardBrand req)
+  pool <- asks dbPool
+  msender <- liftIO $ findUserById pool (ctrSenderId req)
+  sender  <- case msender of
+    Nothing -> liftIO $ throwIO err404 { errBody = "Sender not found" }
+    Just s  -> return s
+  mreceiver <- liftIO $ findUserById pool (ctrReceiverId req)
+  receiver  <- case mreceiver of
+    Nothing -> liftIO $ throwIO err404 { errBody = "Receiver not found" }
+    Just r  -> return r
+  if userCurrency sender /= userCurrency receiver
+    then liftIO $ throwIO err422 { errBody = "Currency mismatch" }
+    else do
       uid <- liftIO nextRandom
       now <- liftIO getCurrentTime
       let tx = Transaction
             { txId           = uid
-            , txUserId       = ctrUserId req
+            , txSenderId     = ctrSenderId req
+            , txReceiverId   = ctrReceiverId req
             , txAmount       = ctrAmount req
-            , txCurrencyCode = ctrCurrencyCode req
+            , txCurrencyCode = userCurrency sender
             , txInstallments = ctrInstallments req
             , txPanLastFour  = ctrPanLastFour req
             , txCardBrand    = ctrCardBrand req
-            , txCardToken    = tok
             , txBillingEmail = ctrBillingEmail req
             , txIpAddress    = ctrIpAddress req
             , txResponseCode = Nothing
@@ -156,17 +149,27 @@ createTransactionHandler req = do
             , txUpdatedAt    = now
             }
       liftIO $ insertTransaction pool tx
-      responseCode <- liftIO mockAuthorize
-      let newStatus = case responseCode of
-            "00" -> Approved
-            "05" -> Declined
-            "51" -> Declined
-            _    -> Error
-      liftIO $ updateTransactionStatus pool uid newStatus (Just (pack responseCode))
-      return tx
-        { txStatus       = newStatus
-        , txResponseCode = Just (pack responseCode)
-        }
+      if userBalance sender < ctrAmount req
+        then do
+          liftIO $ updateTransactionStatus pool uid Declined (Just "51")
+          return tx { txStatus = Declined, txResponseCode = Just "51" }
+        else do
+          responseCode <- liftIO mockAuthorize
+          let newStatus = case responseCode of
+                "00" -> Approved
+                "05" -> Declined
+                "51" -> Declined
+                _    -> Error
+          case newStatus of
+            Approved -> do
+              liftIO $ updateBalance pool (ctrSenderId req) (negate (ctrAmount req))
+              liftIO $ updateBalance pool (ctrReceiverId req) (ctrAmount req)
+            _ -> return ()
+          liftIO $ updateTransactionStatus pool uid newStatus (Just (pack responseCode))
+          return tx
+            { txStatus       = newStatus
+            , txResponseCode = Just (pack responseCode)
+            }
 
 getTransactionHandler :: UUID -> AppM Transaction
 getTransactionHandler tid = do
@@ -176,12 +179,9 @@ getTransactionHandler tid = do
     Just tx -> return tx
     Nothing -> liftIO $ throwIO err404 { errBody = "Transaction not found" }
 
--- ---------------------------------------------------------------------------
--- Application WAI
-
 corsPolicy :: CorsResourcePolicy
 corsPolicy = simpleCorsResourcePolicy
-  { corsOrigins        = Nothing   -- permite qualquer origem
+  { corsOrigins        = Nothing
   , corsMethods        = [methodGet, methodPost, methodPut, methodDelete, methodOptions]
   , corsRequestHeaders = ["Content-Type", "Authorization"]
   }

@@ -28,7 +28,6 @@ dropPrefix prefix f =
       | isUpper c = '_' : toLower c : camelToSnake cs
       | otherwise = c : camelToSnake cs
 
-
 data TransactionStatus
   = Pending
   | Approved
@@ -47,16 +46,15 @@ instance ToJSON TransactionStatus where
 instance FromJSON TransactionStatus where
   parseJSON = genericParseJSON statusOptions
 
-
 data Transaction = Transaction
   { txId           :: UUID
-  , txUserId       :: UUID
+  , txSenderId     :: UUID
+  , txReceiverId   :: UUID
   , txAmount       :: Scientific
   , txCurrencyCode :: Text
   , txInstallments :: Int
   , txPanLastFour  :: Text
   , txCardBrand    :: Text
-  , txCardToken    :: Text
   , txBillingEmail :: Text
   , txIpAddress    :: Text
   , txResponseCode :: Maybe Text
@@ -75,11 +73,10 @@ instance ToJSON Transaction where
 instance FromJSON Transaction where
   parseJSON = genericParseJSON txOptions
 
-
 data CreateTransactionRequest = CreateTransactionRequest
-  { ctrUserId       :: UUID
+  { ctrSenderId     :: UUID
+  , ctrReceiverId   :: UUID
   , ctrAmount       :: Scientific
-  , ctrCurrencyCode :: Text
   , ctrInstallments :: Int
   , ctrPan          :: Text
   , ctrPanLastFour  :: Text

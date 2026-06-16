@@ -19,17 +19,12 @@ import Database.PostgreSQL.Simple.FromRow             (FromRow (..), field)
 import DB.Connection       (withConn)
 import Domain.Transaction  (Transaction (..), TransactionStatus (..))
 
--- ---------------------------------------------------------------------------
--- FromField INET → Text
--- postgresql-simple não converte INET automaticamente para Text.
-
 newtype InetText = InetText { unInetText :: Text }
 
 instance FromField InetText where
   fromField f mbs = case mbs of
     Nothing -> returnError UnexpectedNull f ""
     Just bs -> return $ InetText (decodeUtf8 bs)
-
 
 textToStatus :: Text -> TransactionStatus
 textToStatus "APPROVED" = Approved
@@ -39,21 +34,20 @@ textToStatus _          = Pending
 
 instance FromRow Transaction where
   fromRow = Transaction
-    <$> field                        -- id            :: UUID
-    <*> field                        -- user_id       :: UUID
-    <*> field                        -- amount        :: Scientific
-    <*> field                        -- currency_code :: Text
-    <*> field                        -- installments  :: Int
-    <*> field                        -- pan_last_four :: Text
-    <*> field                        -- card_brand    :: Text
-    <*> field                        -- card_token    :: Text
-    <*> field                        -- billing_email :: Text
-    <*> (unInetText <$> field)       -- ip_address    :: Text (via INET)
-    <*> field                        -- response_code :: Maybe Text
-    <*> (textToStatus <$> field)     -- status        :: TransactionStatus
-    <*> field                        -- created_at    :: UTCTime
-    <*> field                        -- updated_at    :: UTCTime
-
+    <$> field
+    <*> field
+    <*> field
+    <*> field
+    <*> field
+    <*> field
+    <*> field
+    <*> field
+    <*> field
+    <*> (unInetText <$> field)
+    <*> field
+    <*> (textToStatus <$> field)
+    <*> field
+    <*> field
 
 statusToText :: TransactionStatus -> Text
 statusToText Pending  = "PENDING"
@@ -61,24 +55,23 @@ statusToText Approved = "APPROVED"
 statusToText Declined = "DECLINED"
 statusToText Error    = "ERROR"
 
-
 insertTransaction :: Pool Connection -> Transaction -> IO ()
 insertTransaction pool tx =
   withConn pool $ \conn ->
     execute conn
       "INSERT INTO transactions \
-      \ (id, user_id, amount, currency_code, installments, \
-      \  pan_last_four, card_brand, card_token, billing_email, \
+      \ (id, sender_id, receiver_id, amount, currency_code, installments, \
+      \  pan_last_four, card_brand, billing_email, \
       \  ip_address, status) \
       \ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ( txId tx
-      , txUserId tx
+      , txSenderId tx
+      , txReceiverId tx
       , (realToFrac (txAmount tx) :: Double)
       , txCurrencyCode tx
       , txInstallments tx
       , txPanLastFour tx
       , txCardBrand tx
-      , txCardToken tx
       , txBillingEmail tx
       , txIpAddress tx
       , statusToText (txStatus tx)
@@ -89,8 +82,8 @@ findTransactionById :: Pool Connection -> UUID -> IO (Maybe Transaction)
 findTransactionById pool tid = do
   rows <- withConn pool $ \conn ->
     query conn
-      "SELECT id, user_id, amount, currency_code, installments, \
-      \  pan_last_four, card_brand, card_token, billing_email, \
+      "SELECT id, sender_id, receiver_id, amount, currency_code, installments, \
+      \  pan_last_four, card_brand, billing_email, \
       \  ip_address, response_code, status, created_at, updated_at \
       \ FROM transactions WHERE id = ?"
       (Only tid)

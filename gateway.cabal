@@ -26,8 +26,6 @@ library
     Domain.Transaction
     Domain.User
     Server
-    Vault.Repo
-    Vault.Tokenizer
   build-depends:
     , aeson                 ^>=2.2
     , base                  >=4.18 && <4.21
