@@ -10,6 +10,12 @@ import Data.Text                   (pack)
 import Data.Time                   (getCurrentTime)
 import Data.UUID                   (UUID)
 import Data.UUID.V4                (nextRandom)
+import Network.Wai.Middleware.Cors (cors, corsRequestHeaders,
+                                    corsMethods, corsOrigins,
+                                    simpleCorsResourcePolicy,
+                                    CorsResourcePolicy (..))
+import Network.HTTP.Types.Method   (methodDelete, methodGet, methodPost,
+                                    methodPut, methodOptions)
 import Servant
 
 import API.Types
@@ -173,6 +179,14 @@ getTransactionHandler tid = do
 -- ---------------------------------------------------------------------------
 -- Application WAI
 
+corsPolicy :: CorsResourcePolicy
+corsPolicy = simpleCorsResourcePolicy
+  { corsOrigins        = Nothing   -- permite qualquer origem
+  , corsMethods        = [methodGet, methodPost, methodPut, methodDelete, methodOptions]
+  , corsRequestHeaders = ["Content-Type", "Authorization"]
+  }
+
 makeApplication :: AppEnv -> Application
 makeApplication env =
+  cors (const $ Just corsPolicy) $
   serve userAPI $ hoistServer userAPI (appToHandler env) paymentServer
